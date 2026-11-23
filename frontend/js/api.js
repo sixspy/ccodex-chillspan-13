@@ -38,6 +38,7 @@ export function createApi(getToken, onUnauthorized) {
       req(chamberId ? `/api/probes?chamber_id=${chamberId}` : "/api/probes"),
     probe: (id) => req(`/api/probes/${id}`),
     registerProbe: (data) => req("/api/probes", { method: "POST", body: JSON.stringify(data) }),
+    setProbeOnline: (id) => req(`/api/probes/${id}/online`, { method: "POST" }),
     batches: (status) =>
       req(status ? `/api/batches?status=${encodeURIComponent(status)}` : "/api/batches"),
     batch: (id) => req(`/api/batches/${id}`),
@@ -64,6 +65,7 @@ export function createApi(getToken, onUnauthorized) {
       req(probeId ? `/api/calibrations?probe_id=${probeId}` : "/api/calibrations"),
     addCalibration: (data) =>
       req("/api/calibrations", { method: "POST", body: JSON.stringify(data) }),
+    offsetLedger: () => req("/api/offset-online-ledger"),
     routes: () => req("/api/routes"),
     createRoute: (data) => req("/api/routes", { method: "POST", body: JSON.stringify(data) }),
     audit: () => req("/api/audit?limit=150"),

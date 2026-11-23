@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
 from db import connect
+from validators import effective_online_status, latest_calibrations_map
 
 router = APIRouter(tags=["reconcile"])
 
@@ -22,6 +23,19 @@ def _chamber_recon(conn, chamber) -> dict:
            WHERE chamber_id=? AND status='已封批'""",
         (cid,),
     ).fetchone()["c"]
+    cal_map = latest_calibrations_map(conn)
+    probes = conn.execute(
+        "SELECT * FROM probes WHERE chamber_id=? ORDER BY id", (cid,)
+    ).fetchall()
+    probe_states = [
+        {
+            "probe_code": p["probe_code"],
+            "online_status": effective_online_status(
+                p["online_status"], cal_map.get(p["id"])
+            ),
+        }
+        for p in probes
+    ]
     gap = quota - active
     ok = active <= quota
     return {
@@ -33,6 +47,7 @@ def _chamber_recon(conn, chamber) -> dict:
         "sealed_batches": sealed,
         "quota_left": gap,
         "balanced": ok,
+        "probes": probe_states,
         "proof": {
             "formula": "active_batches <= quota_batches",
             "left": active,

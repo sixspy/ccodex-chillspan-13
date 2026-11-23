@@ -167,6 +167,20 @@ CREATE TABLE IF NOT EXISTS contention_log(
   detail TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS offset_online_ledger(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  probe_id INTEGER NOT NULL,
+  probe_code TEXT NOT NULL,
+  action TEXT NOT NULL,
+  offset_c REAL,
+  limit_c REAL NOT NULL,
+  actor TEXT NOT NULL,
+  shift_date TEXT NOT NULL,
+  sealed_on TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(probe_id) REFERENCES probes(id)
+);
 CREATE TABLE IF NOT EXISTS audit_trail(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   actor TEXT NOT NULL,
@@ -201,6 +215,40 @@ def write_audit(conn: sqlite3.Connection, actor: str, action: str, target: str, 
         """INSERT INTO audit_trail(actor,action,target,payload,created_at)
            VALUES (?,?,?,?,?)""",
         (actor, action, target, json.dumps(payload, ensure_ascii=False), now_iso()),
+    )
+
+
+def write_offset_ledger(
+    conn: sqlite3.Connection,
+    probe_id: int,
+    probe_code: str,
+    action: str,
+    offset_c: float | None,
+    actor: str,
+    detail: str = "",
+) -> None:
+    """偏移在线台账：班组当天记入当天封口，只增不改。"""
+    from datetime import date
+
+    from validators import OFFSET_LIMIT_C
+
+    today = date.today().isoformat()
+    conn.execute(
+        """INSERT INTO offset_online_ledger(probe_id,probe_code,action,offset_c,
+           limit_c,actor,shift_date,sealed_on,detail,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (
+            probe_id,
+            probe_code,
+            action,
+            offset_c,
+            OFFSET_LIMIT_C,
+            actor,
+            today,
+            today,
+            detail,
+            now_iso(),
+        ),
     )
 
 
@@ -340,6 +388,12 @@ def seed_calibrations(conn: sqlite3.Connection) -> None:
             "SELECT id FROM probes WHERE probe_code=?", (row["probe_code"],),
         ).fetchone()
         if not probe:
+            continue
+        if conn.execute(
+            """SELECT id FROM calibration_records
+               WHERE probe_id=? AND calibrated_at=? AND offset_c=?""",
+            (probe["id"], row["calibrated_at"], float(row["offset_c"])),
+        ).fetchone():
             continue
         conn.execute(
             """INSERT INTO calibration_records(probe_id,calibrated_at,offset_c,

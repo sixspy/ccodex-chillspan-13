@@ -45,6 +45,7 @@ createApp({
     const spectrumExports = ref([]);
     const lineageEdges = ref([]);
     const calibrations = ref([]);
+    const offsetLedger = ref([]);
     const routes = ref([]);
     const carrierJobs = ref([]);
     const thawJobs = ref([]);
@@ -192,7 +193,7 @@ createApp({
       if (!token.value) return;
       clearFlash();
       try {
-        const [ch, pr, bt, ex, sl, sp, lg, cal, rt, d, cj, tj] = await Promise.all([
+        const [ch, pr, bt, ex, sl, sp, lg, cal, rt, d, cj, tj, ol] = await Promise.all([
           api.chambers(),
           api.probes(),
           api.batches(),
@@ -205,6 +206,7 @@ createApp({
           api.dashboard(),
           api.carrierJobs(),
           api.thawJobs(),
+          api.offsetLedger(),
         ]);
         chambers.value = ch.items || [];
         probes.value = pr.items || [];
@@ -218,6 +220,7 @@ createApp({
         dash.value = d || {};
         carrierJobs.value = cj.items || [];
         thawJobs.value = tj.items || [];
+        offsetLedger.value = ol.items || [];
 
         if (chambers.value.length && !probeForm.value.chamber_id) {
           probeForm.value.chamber_id = chambers.value[0].id;
@@ -282,6 +285,17 @@ createApp({
       probeDetail.value = await api.probe(id);
     }
     function selectProbe() {}
+
+    async function setProbeOnline(id) {
+      clearFlash();
+      try {
+        await api.setProbeOnline(id);
+        flashOk("探头已标在线");
+        await refresh();
+      } catch (e) {
+        flashErr(e);
+      }
+    }
 
     async function createBatch() {
       clearFlash();
@@ -466,6 +480,7 @@ createApp({
       spectrumExports,
       lineageEdges,
       calibrations,
+      offsetLedger,
       routes,
       carrierJobs,
       thawJobs,
@@ -508,6 +523,7 @@ createApp({
       registerProbe,
       loadProbeDetail,
       selectProbe,
+      setProbeOnline,
       createBatch,
       loadBatchDetail,
       selectBatch,

@@ -11,6 +11,7 @@ SKIP_PARTS = {
     "tests",
     "scripts",
     ".git",
+    ".venv",
     "data",
 }
 SKIP_NAMES = {"vue.global.prod.js", "README.md", "Dockerfile"}

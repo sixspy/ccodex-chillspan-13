@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
 from models import ChamberIn
+from validators import effective_online_status, latest_calibrations_map
 
 router = APIRouter(tags=["chambers"])
 
@@ -39,6 +40,14 @@ def get_chamber(chamber_id: int, authorization: AuthHeader = None):
             "SELECT * FROM probes WHERE chamber_id=? ORDER BY id",
             (chamber_id,),
         ).fetchall()
+        cal_map = latest_calibrations_map(conn)
+        probe_items = []
+        for p in probes:
+            d = dict(p)
+            d["online_status"] = effective_online_status(
+                p["online_status"], cal_map.get(p["id"])
+            )
+            probe_items.append(d)
         batches = conn.execute(
             """SELECT id,batch_code,status,generation FROM temp_batches
                WHERE chamber_id=? ORDER BY id DESC LIMIT 20""",
@@ -51,7 +60,7 @@ def get_chamber(chamber_id: int, authorization: AuthHeader = None):
         ).fetchone()["c"]
         return {
             "chamber": dict(ch),
-            "probes": [dict(p) for p in probes],
+            "probes": probe_items,
             "recent_batches": [dict(b) for b in batches],
             "active_batch_count": active,
             "quota_left": int(ch["quota_batches"]) - int(active),

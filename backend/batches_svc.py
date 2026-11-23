@@ -9,7 +9,14 @@ from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
 from locks import release, require_lock
 from models import BatchIn
-from validators import summarize_points, validate_probe_online, validate_temp_point
+from validators import (
+    effective_online_status,
+    latest_calibration,
+    latest_calibrations_map,
+    summarize_points,
+    validate_probe_online,
+    validate_temp_point,
+)
 
 router = APIRouter(tags=["batches"])
 
@@ -32,7 +39,8 @@ def list_batches(authorization: AuthHeader = None, status: str | None = None):
     with connect() as conn:
         if status:
             rows = conn.execute(
-                """SELECT b.*, c.chamber_code, p.probe_code FROM temp_batches b
+                """SELECT b.*, c.chamber_code, p.probe_code, p.online_status AS probe_status
+                   FROM temp_batches b
                    JOIN cold_chambers c ON c.id=b.chamber_id
                    JOIN probes p ON p.id=b.probe_id
                    WHERE b.status=? ORDER BY b.id DESC""",
@@ -40,15 +48,20 @@ def list_batches(authorization: AuthHeader = None, status: str | None = None):
             ).fetchall()
         else:
             rows = conn.execute(
-                """SELECT b.*, c.chamber_code, p.probe_code FROM temp_batches b
+                """SELECT b.*, c.chamber_code, p.probe_code, p.online_status AS probe_status
+                   FROM temp_batches b
                    JOIN cold_chambers c ON c.id=b.chamber_id
                    JOIN probes p ON p.id=b.probe_id
                    ORDER BY b.id DESC"""
             ).fetchall()
+        cal_map = latest_calibrations_map(conn)
         items = []
         for r in rows:
             d = dict(r)
             d["temp_points"] = json.loads(d["temp_points"] or "[]")
+            d["probe_online"] = effective_online_status(
+                d.pop("probe_status"), cal_map.get(d["probe_id"])
+            )
             items.append(d)
         return {"items": items}
 
@@ -58,7 +71,8 @@ def get_batch(batch_id: int, authorization: AuthHeader = None):
     require_user(authorization)
     with connect() as conn:
         row = conn.execute(
-            """SELECT b.*, c.name chamber_name, c.target_min, c.target_max, p.probe_code
+            """SELECT b.*, c.name chamber_name, c.target_min, c.target_max, p.probe_code,
+                      p.online_status AS probe_status
                FROM temp_batches b
                JOIN cold_chambers c ON c.id=b.chamber_id
                JOIN probes p ON p.id=b.probe_id WHERE b.id=?""",
@@ -68,6 +82,9 @@ def get_batch(batch_id: int, authorization: AuthHeader = None):
             raise HTTPException(404, "批次不存在")
         data = dict(row)
         data["temp_points"] = json.loads(data["temp_points"] or "[]")
+        data["probe_online"] = effective_online_status(
+            data.pop("probe_status"), latest_calibration(conn, data["probe_id"])
+        )
         exc = conn.execute(
             "SELECT * FROM excursion_cursors WHERE batch_id=? ORDER BY id DESC",
             (batch_id,),
@@ -107,7 +124,7 @@ def create_batch(body: BatchIn, authorization: AuthHeader = None):
             ).fetchone()
             if not probe or probe["chamber_id"] != body.chamber_id:
                 raise HTTPException(422, "探头与仓间不匹配")
-            validate_probe_online(probe)
+            validate_probe_online(conn, probe)
             points = body.temp_points or []
             for pt in points:
                 validate_temp_point(

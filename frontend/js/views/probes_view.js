@@ -25,7 +25,10 @@ export const probesViewTemplate = `
         <td>{{ p.region }}</td>
         <td><span class="badge" :class="probeOnlineClass(p.online_status)">{{ p.online_status }}</span></td>
         <td>{{ p.calibration_due }}</td>
-        <td><button class="mini-btn" @click.stop="loadProbeDetail(p.id)">校准史</button></td>
+        <td>
+          <button class="mini-btn" @click.stop="loadProbeDetail(p.id)">校准史</button>
+          <button v-if="p.online_status!=='在线'" class="mini-btn" @click.stop="setProbeOnline(p.id)">标在线</button>
+        </td>
       </tr>
     </tbody>
   </table>
